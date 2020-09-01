@@ -1,0 +1,55 @@
+---
+# v1: check free space available on datastore and verify that enough
+# free space is available to create disks for new VM
+# limitations: all disks have to be on the same datastore
+
+- name: Test playbook
+  hosts: localhost
+  gather_facts: false
+  vars:
+    datastore_safety: 100
+    vm_disk:
+      - disk_size_gb: 100
+        disk_datastore: datastore1
+      - disk_size_gb: 50
+        disk_datastore: datastore1
+    datastore_info: [{'accessible': True, 'capacity': 5497558138880, 'datastore_cluster': 'datacluster0', 'freeSpace': 4279000641536, 'maintenanceMode': 'normal', 'multipleHostAccess': True, 'name': 'datastore1', 'nfs_path': '/vol/datastore3', 'nfs_server': 'nfs_server1', 'provisioned': 1708109410304, 'type': 'NFS', 'uncommitted': 489551912960, 'url': 'ds:///vmfs/volumes/420b3e73-67070776/'}]
+  tasks:
+#- name: Gather info from datacenter about specific datastore
+#  vmware_datastore_info:
+#    hostname: '{{ vcenter_ip }}'
+#    username: '{{ vcenter_username }}'
+#    password: '{{ vcenter_password }}'
+#    datacenter_name: '{{ vm_datacenter }}'
+#    name: '{{ vm_disk['0']['disk_datastore'] }}'
+  #  name: '{{ item }}'
+  #loop: '{{ vm_disk.[].disk_datastore | dict2list | unique }}' # to be verified
+#  delegate_to: localhost
+#  register: datastore_info
+
+    - name: Set free_capacity from datastore
+      set_fact:
+        free_capacity: "{{ '%.0f' | format (datastore_info[0]['freeSpace']/1024/1024/1024 | float) }}"
+
+    - name: Display free_capacity from datastore
+      debug:
+        msg: "Free capacity on datastore {{ datastore_info[0]['name'] }} is {{ free_capacity }} GB"
+
+    - name: Calculate capacity required on datastore
+      set_fact:
+        required_capacity: "{{ vm_disk | sum (attribute='disk_size_gb') }}"
+
+    - name: Display calculated required capacity
+      debug:
+        msg: "Calculated capacity is {{ required_capacity }} GB"
+
+    - name: Test free space against required capacity
+      block:
+        - name: Positive message
+          debug:
+            msg: "Enough free capacity on datastore {{ datastore_info[0]['name'] }}"
+          failed_when: (required_capacity | int) > (free_capacity | int - datastore_safety | int)
+      rescue:
+        - name: Negative message
+          debug:
+            msg: "NOT enough free capacity on datastore {{ datastore_info[0]['name'] }}"
